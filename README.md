@@ -63,59 +63,72 @@ Add to your MCP settings:
 }
 ```
 
-**No API key needed!** The tool leverages your existing Claude/Cursor subscription.
-
 ### Available MCP Tools
 
-1. **analyze_repository**
-   - Scans a Go repository and extracts function metadata
+1. **build_repo_context**
+   - Scans repository and creates comprehensive context
+   - Saves to `.contextforge/context.json`
    - Input: `{"repo_path": "/path/to/repo"}`
 
-2. **analyze_coverage**
-   - Runs coverage analysis and identifies gaps
+2. **analyze_test_scenarios**
+   - Generates all test scenarios that should exist
+   - Saves to `.contextforge/scenarios.json`
    - Input: `{"repo_path": "/path/to/repo"}`
 
-3. **get_test_recommendations**
-   - Returns prioritized list of uncovered functions
-   - Input: `{"repo_path": "/path/to/repo", "limit": 10}`
-
-4. **generate_unit_tests**
-   - Generates tests for specified functions
-   - Input: `{"repo_path": "/path/to/repo", "function_ids": ["FuncName1", "FuncName2"]}`
-
-5. **verify_coverage_improvement**
-   - Re-runs coverage to verify improvements
+3. **check_test_coverage**
+   - Compares scenarios vs existing tests
+   - Saves to `.contextforge/coverage_report.json`
    - Input: `{"repo_path": "/path/to/repo"}`
+
+4. **generate_test_stubs**
+   - Creates test files with stub functions for missing tests
+   - Each stub prints "test not yet built"
+   - Input: `{"repo_path": "/path/to/repo"}`
+
+5. **get_context**
+   - Retrieves saved repository context
+   - Input: `{"repo_path": "/path/to/repo"}`
+
+See [MCP_USAGE.md](MCP_USAGE.md) for detailed workflow guide.
 
 ## How It Works
 
-ContextForge uses a two-step AI-assisted approach:
+ContextForge uses an efficient 4-step workflow:
 
-### Step 1: Context Extraction
-The MCP server extracts comprehensive context for each function:
-- Function source code
-- All imports
-- Type definitions (structs, interfaces)
-- Related code (constants, variables)
-- Detailed generation instructions
+### Step 1: Build Repository Context
+Scans your codebase once and creates comprehensive documentation:
+- All functions with signatures and complexity
+- Existing tests mapped to functions
+- Saved to `.contextforge/context.json`
 
-### Step 2: AI-Powered Generation
-The AI assistant (Claude/Cursor) receives this context and generates **real, working tests**:
-- ✅ Comprehensive test cases with assertions
-- ✅ Edge cases and error handling
-- ✅ Table-driven tests for complex functions
-- ✅ Proper mocking for dependencies (gin.Context, databases, etc.)
-- ✅ No t.Skip() placeholders - actual implementations
+### Step 2: Analyze Test Scenarios
+Generates test scenarios based on function characteristics:
+- Happy path (always)
+- Error cases (for functions returning errors)
+- Edge cases (for complex functions)
+- Boundary tests (for numeric/slice parameters)
 
-**Advantage:** Uses your existing Cursor/Claude subscription - no additional API keys or costs!
+### Step 3: Check Coverage
+Compares scenarios against existing tests:
+- Smart matching of test names
+- Identifies coverage gaps
+- Generates detailed report
+
+### Step 4: Generate Test Stubs
+Creates test files with stub functions:
+- Each stub has `t.Skip("Test stub - implementation pending")`
+- Appends to existing files or creates new ones
+- Ready for implementation
+
+**Advantage:** Efficient caching - context is built once and reused!
 
 ## Example Workflow
 
 ```
-1. analyze_repository → Get function-level map
-2. get_test_recommendations → Get top 10 uncovered functions
-3. generate_unit_tests → Generate tests for selected functions (uses Claude API)
-4. verify_coverage_improvement → Verify coverage increased
+1. build_repo_context → Create .contextforge/context.json
+2. analyze_test_scenarios → Generate .contextforge/scenarios.json
+3. check_test_coverage → Generate .contextforge/coverage_report.json
+4. generate_test_stubs → Create test files with stubs
 ```
 
 ## Prioritization Algorithm

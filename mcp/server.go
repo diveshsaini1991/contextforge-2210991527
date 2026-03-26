@@ -21,55 +21,48 @@ func NewContextForgeServer() *server.MCPServer {
 
 // registerTools registers all MCP tools
 func registerTools(s *server.MCPServer) {
-	// Tool 1: analyze_repository
-	s.AddTool(mcp.NewTool("analyze_repository",
-		mcp.WithDescription("Analyzes a Go repository and extracts function-level metadata"),
+	// Tool 1: build_repo_context
+	s.AddTool(mcp.NewTool("build_repo_context",
+		mcp.WithDescription("Scans repository and creates comprehensive context with all functions and existing tests. Saves to .contextforge/context.json"),
 		mcp.WithString("repo_path",
 			mcp.Required(),
 			mcp.Description("Path to the Go repository to analyze"),
 		),
-	), HandleAnalyzeRepository)
+	), HandleBuildRepoContext)
 
-	// Tool 2: analyze_coverage
-	s.AddTool(mcp.NewTool("analyze_coverage",
-		mcp.WithDescription("Runs coverage analysis and identifies gaps in test coverage"),
-		mcp.WithString("repo_path",
-			mcp.Required(),
-			mcp.Description("Path to the Go repository to analyze"),
-		),
-	), HandleAnalyzeCoverage)
-
-	// Tool 3: get_test_recommendations
-	s.AddTool(mcp.NewTool("get_test_recommendations",
-		mcp.WithDescription("Returns prioritized list of uncovered functions that need tests"),
+	// Tool 2: analyze_test_scenarios
+	s.AddTool(mcp.NewTool("analyze_test_scenarios",
+		mcp.WithDescription("Generates list of all test scenarios that should exist (happy path, error cases, edge cases, boundary). Saves to .contextforge/scenarios.json. Uses existing context if available."),
 		mcp.WithString("repo_path",
 			mcp.Required(),
 			mcp.Description("Path to the Go repository"),
 		),
-		mcp.WithNumber("limit",
-			mcp.Description("Maximum number of recommendations (default: 10)"),
-		),
-	), HandleGetTestRecommendations)
+	), HandleAnalyzeTestScenarios)
 
-	// Tool 4: generate_unit_tests
-	s.AddTool(mcp.NewTool("generate_unit_tests",
-		mcp.WithDescription("Extracts context for AI-assisted unit test generation. Returns function source code, imports, type definitions, and detailed instructions. The AI assistant should use this context to generate and write comprehensive unit tests."),
+	// Tool 3: check_test_coverage
+	s.AddTool(mcp.NewTool("check_test_coverage",
+		mcp.WithDescription("Compares test scenarios against existing tests and generates coverage report. Saves to .contextforge/coverage_report.json. Uses existing context and scenarios if available."),
 		mcp.WithString("repo_path",
 			mcp.Required(),
 			mcp.Description("Path to the Go repository"),
 		),
-		mcp.WithArray("function_ids",
-			mcp.Required(),
-			mcp.Description("List of function identifiers to generate tests for (format: 'FunctionName' or 'package.FunctionName')"),
-		),
-	), HandleGenerateUnitTests)
+	), HandleCheckTestCoverage)
 
-	// Tool 5: verify_coverage_improvement
-	s.AddTool(mcp.NewTool("verify_coverage_improvement",
-		mcp.WithDescription("Re-runs coverage analysis to verify improvements after test generation"),
+	// Tool 4: generate_test_stubs
+	s.AddTool(mcp.NewTool("generate_test_stubs",
+		mcp.WithDescription("Creates test files with stub functions for missing tests. Each stub prints 'test not yet built' and can be implemented later."),
 		mcp.WithString("repo_path",
 			mcp.Required(),
 			mcp.Description("Path to the Go repository"),
 		),
-	), HandleVerifyCoverageImprovement)
+	), HandleGenerateTestStubs)
+
+	// Tool 5: get_context
+	s.AddTool(mcp.NewTool("get_context",
+		mcp.WithDescription("Retrieves previously saved repository context from .contextforge/context.json"),
+		mcp.WithString("repo_path",
+			mcp.Required(),
+			mcp.Description("Path to the Go repository"),
+		),
+	), HandleGetContext)
 }

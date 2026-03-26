@@ -5,62 +5,58 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/divesh/contextforge/internal/coverage"
-	"github.com/divesh/contextforge/internal/generator"
-	"github.com/divesh/contextforge/internal/models"
-	"github.com/divesh/contextforge/internal/scanner"
+	"github.com/divesh/contextforge/internal/builder"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // Tool handlers for MCP server
 
-// AnalyzeRepositoryInput defines input for analyze_repository tool
-type AnalyzeRepositoryInput struct {
+// BuildRepoContextInput defines input for build_repo_context tool
+type BuildRepoContextInput struct {
 	RepoPath string `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
 }
 
-// AnalyzeCoverageInput defines input for analyze_coverage tool
-type AnalyzeCoverageInput struct {
+// AnalyzeTestScenariosInput defines input for analyze_test_scenarios tool
+type AnalyzeTestScenariosInput struct {
 	RepoPath string `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
 }
 
-// GetTestRecommendationsInput defines input for get_test_recommendations tool
-type GetTestRecommendationsInput struct {
-	RepoPath string `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
-	Limit    int    `json:"limit" jsonschema:"description=Maximum number of recommendations to return"`
-}
-
-// GenerateUnitTestsInput defines input for generate_unit_tests tool
-type GenerateUnitTestsInput struct {
-	RepoPath    string   `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
-	FunctionIDs []string `json:"function_ids" jsonschema:"required,description=List of function identifiers to generate tests for"`
-}
-
-// VerifyCoverageImprovementInput defines input for verify_coverage_improvement tool
-type VerifyCoverageImprovementInput struct {
+// CheckTestCoverageInput defines input for check_test_coverage tool
+type CheckTestCoverageInput struct {
 	RepoPath string `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
 }
 
-// HandleAnalyzeRepository handles the analyze_repository tool
-func HandleAnalyzeRepository(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// GenerateTestStubsInput defines input for generate_test_stubs tool
+type GenerateTestStubsInput struct {
+	RepoPath string `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
+}
+
+// GetContextInput defines input for get_context tool
+type GetContextInput struct {
+	RepoPath string `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
+}
+
+// HandleBuildRepoContext handles the build_repo_context tool
+func HandleBuildRepoContext(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args, ok := request.Params.Arguments.(map[string]interface{})
 	if !ok {
 		return mcp.NewToolResultError("Invalid arguments type"), nil
 	}
 
-	var input AnalyzeRepositoryInput
+	var input BuildRepoContextInput
 	if err := mapToStruct(args, &input); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
 	}
 
-	// Scan the repository
-	repoCtx, err := scanner.ScanRepository(input.RepoPath)
+	// Build comprehensive repository context
+	contextBuilder := builder.NewContextBuilder(input.RepoPath)
+	repoContext, err := contextBuilder.BuildContext()
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to scan repository: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to build context: %v", err)), nil
 	}
 
 	// Convert to JSON
-	result, err := json.MarshalIndent(repoCtx, "", "  ")
+	result, err := json.MarshalIndent(repoContext, "", "  ")
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal result: %v", err)), nil
 	}
@@ -68,29 +64,82 @@ func HandleAnalyzeRepository(ctx context.Context, request mcp.CallToolRequest) (
 	return mcp.NewToolResultText(string(result)), nil
 }
 
-// HandleAnalyzeCoverage handles the analyze_coverage tool
-func HandleAnalyzeCoverage(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// HandleAnalyzeTestScenarios handles the analyze_test_scenarios tool
+func HandleAnalyzeTestScenarios(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args, ok := request.Params.Arguments.(map[string]interface{})
 	if !ok {
 		return mcp.NewToolResultError("Invalid arguments type"), nil
 	}
 
-	var input AnalyzeCoverageInput
+	var input AnalyzeTestScenariosInput
 	if err := mapToStruct(args, &input); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
 	}
 
-	// First, analyze the repository
-	repoCtx, err := scanner.ScanRepository(input.RepoPath)
+	// Try to load existing context
+	contextBuilder := builder.NewContextBuilder(input.RepoPath)
+	repoContext, err := contextBuilder.LoadContext()
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to scan repository: %v", err)), nil
+		// Context doesn't exist, build it
+		repoContext, err = contextBuilder.BuildContext()
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to build context: %v", err)), nil
+		}
 	}
 
-	// Then analyze coverage
-	analyzer := coverage.NewAnalyzer(input.RepoPath, repoCtx)
-	report, err := analyzer.Analyze()
+	// Analyze test scenarios
+	scenarioAnalyzer := builder.NewScenarioAnalyzer(input.RepoPath)
+	scenarios, err := scenarioAnalyzer.AnalyzeScenarios(repoContext)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to analyze coverage: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to analyze scenarios: %v", err)), nil
+	}
+
+	// Convert to JSON
+	result, err := json.MarshalIndent(scenarios, "", "  ")
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal result: %v", err)), nil
+	}
+
+	return mcp.NewToolResultText(string(result)), nil
+}
+
+// HandleCheckTestCoverage handles the check_test_coverage tool
+func HandleCheckTestCoverage(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args, ok := request.Params.Arguments.(map[string]interface{})
+	if !ok {
+		return mcp.NewToolResultError("Invalid arguments type"), nil
+	}
+
+	var input CheckTestCoverageInput
+	if err := mapToStruct(args, &input); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
+	}
+
+	// Load or build context
+	contextBuilder := builder.NewContextBuilder(input.RepoPath)
+	repoContext, err := contextBuilder.LoadContext()
+	if err != nil {
+		repoContext, err = contextBuilder.BuildContext()
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to build context: %v", err)), nil
+		}
+	}
+
+	// Load or analyze scenarios
+	scenarioAnalyzer := builder.NewScenarioAnalyzer(input.RepoPath)
+	scenarios, err := scenarioAnalyzer.LoadAnalysis()
+	if err != nil {
+		scenarios, err = scenarioAnalyzer.AnalyzeScenarios(repoContext)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to analyze scenarios: %v", err)), nil
+		}
+	}
+
+	// Check coverage
+	coverageChecker := builder.NewCoverageChecker(input.RepoPath)
+	report, err := coverageChecker.CheckCoverage(repoContext, scenarios)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to check coverage: %v", err)), nil
 	}
 
 	// Convert to JSON
@@ -102,145 +151,76 @@ func HandleAnalyzeCoverage(ctx context.Context, request mcp.CallToolRequest) (*m
 	return mcp.NewToolResultText(string(result)), nil
 }
 
-// HandleGetTestRecommendations handles the get_test_recommendations tool
-func HandleGetTestRecommendations(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// HandleGenerateTestStubs handles the generate_test_stubs tool
+func HandleGenerateTestStubs(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args, ok := request.Params.Arguments.(map[string]interface{})
 	if !ok {
 		return mcp.NewToolResultError("Invalid arguments type"), nil
 	}
 
-	var input GetTestRecommendationsInput
+	var input GenerateTestStubsInput
 	if err := mapToStruct(args, &input); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
 	}
 
-	if input.Limit == 0 {
-		input.Limit = 10 // Default limit
-	}
-
-	// Analyze repository and coverage
-	repoCtx, err := scanner.ScanRepository(input.RepoPath)
+	// Load context
+	contextBuilder := builder.NewContextBuilder(input.RepoPath)
+	repoContext, err := contextBuilder.LoadContext()
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to scan repository: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("Context not found. Run build_repo_context first: %v", err)), nil
 	}
 
-	analyzer := coverage.NewAnalyzer(input.RepoPath, repoCtx)
-	report, err := analyzer.Analyze()
+	// Load coverage report
+	coverageChecker := builder.NewCoverageChecker(input.RepoPath)
+	report, err := coverageChecker.LoadReport()
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to analyze coverage: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("Coverage report not found. Run check_test_coverage first: %v", err)), nil
 	}
 
-	// Collect all uncovered functions
-	var uncovered []models.FunctionCoverage
-	for _, pkg := range report.CoverageByPackage {
-		uncovered = append(uncovered, pkg.UncoveredFunctions...)
-	}
-
-	// Prioritize and get top N
-	prioritizer := generator.NewPrioritizer()
-	recommendations := prioritizer.GetTopPriority(uncovered, input.Limit)
-
-	// Convert to JSON
-	result, err := json.MarshalIndent(recommendations, "", "  ")
+	// Generate stubs
+	stubGenerator := builder.NewStubGenerator(input.RepoPath)
+	createdFiles, err := stubGenerator.GenerateStubs(repoContext, report)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal result: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to generate stubs: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(string(result)), nil
-}
-
-// HandleGenerateUnitTests handles the generate_unit_tests tool
-// Returns context for the AI assistant to generate tests
-func HandleGenerateUnitTests(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, ok := request.Params.Arguments.(map[string]interface{})
-	if !ok {
-		return mcp.NewToolResultError("Invalid arguments type"), nil
-	}
-
-	var input GenerateUnitTestsInput
-	if err := mapToStruct(args, &input); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
-	}
-
-	// Analyze repository and coverage
-	repoCtx, err := scanner.ScanRepository(input.RepoPath)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to scan repository: %v", err)), nil
-	}
-
-	analyzer := coverage.NewAnalyzer(input.RepoPath, repoCtx)
-	report, err := analyzer.Analyze()
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to analyze coverage: %v", err)), nil
-	}
-
-	// Find functions matching the IDs
-	var targetFunctions []models.FunctionCoverage
-	for _, pkg := range report.CoverageByPackage {
-		for _, fn := range pkg.UncoveredFunctions {
-			for _, id := range input.FunctionIDs {
-				if fn.Name == id || fmt.Sprintf("%s.%s", pkg.Package, fn.Name) == id {
-					targetFunctions = append(targetFunctions, fn)
-				}
-			}
-		}
-	}
-
-	if len(targetFunctions) == 0 {
-		return mcp.NewToolResultError("No matching functions found"), nil
-	}
-
-	// Prepare test generation context (instead of generating tests directly)
-	gen := generator.NewTestGenerator(input.RepoPath)
-	genResult, err := gen.PrepareTestGeneration(targetFunctions)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to prepare test generation: %v", err)), nil
-	}
-
-	// Return comprehensive context for AI to generate tests
-	result, err := json.MarshalIndent(genResult, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal result: %v", err)), nil
-	}
-
-	return mcp.NewToolResultText(string(result)), nil
-}
-
-// HandleVerifyCoverageImprovement handles the verify_coverage_improvement tool
-func HandleVerifyCoverageImprovement(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, ok := request.Params.Arguments.(map[string]interface{})
-	if !ok {
-		return mcp.NewToolResultError("Invalid arguments type"), nil
-	}
-
-	var input VerifyCoverageImprovementInput
-	if err := mapToStruct(args, &input); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
-	}
-
-	// Analyze current coverage
-	repoCtx, err := scanner.ScanRepository(input.RepoPath)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to scan repository: %v", err)), nil
-	}
-
-	analyzer := coverage.NewAnalyzer(input.RepoPath, repoCtx)
-	report, err := analyzer.Analyze()
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to analyze coverage: %v", err)), nil
-	}
-
-	// Return coverage summary
+	// Return summary
 	summary := map[string]interface{}{
-		"overall_coverage":        report.OverallCoverage,
-		"total_functions":         report.TotalUncovered + report.TotalPartiallyCovered + report.TotalFullyCovered,
-		"uncovered_functions":     report.TotalUncovered,
-		"partially_covered":       report.TotalPartiallyCovered,
-		"fully_covered_functions": report.TotalFullyCovered,
-		"analyzed_at":             report.AnalyzedAt,
+		"created_files":     createdFiles,
+		"total_stubs":       len(report.MissingTests),
+		"message":           fmt.Sprintf("Generated %d test stubs in %d file(s)", len(report.MissingTests), len(createdFiles)),
+		"next_steps":        "Implement the test logic in the generated stub functions",
 	}
 
 	result, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal result: %v", err)), nil
+	}
+
+	return mcp.NewToolResultText(string(result)), nil
+}
+
+// HandleGetContext handles the get_context tool
+func HandleGetContext(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args, ok := request.Params.Arguments.(map[string]interface{})
+	if !ok {
+		return mcp.NewToolResultError("Invalid arguments type"), nil
+	}
+
+	var input GetContextInput
+	if err := mapToStruct(args, &input); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
+	}
+
+	// Load context
+	contextBuilder := builder.NewContextBuilder(input.RepoPath)
+	repoContext, err := contextBuilder.LoadContext()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Context not found. Run build_repo_context first: %v", err)), nil
+	}
+
+	// Convert to JSON
+	result, err := json.MarshalIndent(repoContext, "", "  ")
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal result: %v", err)), nil
 	}
