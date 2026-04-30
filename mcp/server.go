@@ -71,8 +71,10 @@ func registerTools(s *server.MCPServer) {
 
 	s.AddTool(mcp.NewTool("generate_test_stubs",
 		mcp.WithDescription(
-			"Step 4 of 4. Creates test files with stub functions for every missing test "+
-				"identified by check_test_coverage. Each stub calls t.Skip() with a description. "+
+			"Step 4 of 4. Generates real table-driven test implementations for missing tests "+
+				"identified by check_test_coverage. Produces compilable tests with assertions "+
+				"for simple functions (numeric, string, bool, slice returns). "+
+				"Falls back to t.Skip() stubs for complex functions requiring mocks (HTTP handlers, etc.). "+
 				"Appends to existing test files or creates new ones. Non-destructive. "+
 				"Requires: context and coverage report must exist (run steps 1-3 first). "+
 				"Returns summary with list of created/modified test files.",

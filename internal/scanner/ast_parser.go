@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -10,7 +11,7 @@ import (
 	"github.com/divesh/contextforge/internal/models"
 )
 
-// ParseFile parses a Go source file and extracts function information
+// ParseFile parses a Go source file and extracts function information.
 func ParseFile(filePath string) ([]models.FunctionInfo, error) {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
@@ -25,38 +26,30 @@ func ParseFile(filePath string) ([]models.FunctionInfo, error) {
 		if !ok {
 			return true
 		}
-
-		funcInfo := extractFunctionInfo(fset, funcDecl, filePath)
-		functions = append(functions, funcInfo)
+		functions = append(functions, extractFunctionInfo(fset, funcDecl, filePath))
 		return true
 	})
 
 	return functions, nil
 }
 
-// extractFunctionInfo extracts metadata from a function declaration
 func extractFunctionInfo(fset *token.FileSet, funcDecl *ast.FuncDecl, filePath string) models.FunctionInfo {
-	funcName := funcDecl.Name.Name
-	exported := isExported(funcName)
-
 	startPos := fset.Position(funcDecl.Pos())
 	endPos := fset.Position(funcDecl.End())
 
-	signature := buildSignature(funcDecl)
-	complexity := calculateComplexity(funcDecl)
-
 	funcInfo := models.FunctionInfo{
-		Name:            funcName,
-		Signature:       signature,
-		Exported:        exported,
+		Name:            funcDecl.Name.Name,
+		Signature:       buildSignature(funcDecl),
+		Exported:        isExported(funcDecl.Name.Name),
 		File:            filePath,
 		StartLine:       startPos.Line,
 		EndLine:         endPos.Line,
 		LineCount:       endPos.Line - startPos.Line + 1,
-		ComplexityScore: complexity,
+		ComplexityScore: calculateComplexity(funcDecl),
+		Params:          extractParams(funcDecl),
+		Returns:         extractReturns(funcDecl),
 	}
 
-	// Check if this is a method (has a receiver)
 	if funcDecl.Recv != nil && len(funcDecl.Recv.List) > 0 {
 		funcInfo.ReceiverType = getReceiverType(funcDecl.Recv.List[0].Type)
 	}
@@ -64,7 +57,53 @@ func extractFunctionInfo(fset *token.FileSet, funcDecl *ast.FuncDecl, filePath s
 	return funcInfo
 }
 
-// isExported checks if a function name is exported (public)
+func extractParams(funcDecl *ast.FuncDecl) []models.ParamInfo {
+	if funcDecl.Type.Params == nil {
+		return nil
+	}
+
+	var params []models.ParamInfo
+	paramIdx := 0
+	for _, field := range funcDecl.Type.Params.List {
+		typStr := exprToString(field.Type)
+		if len(field.Names) == 0 {
+			params = append(params, models.ParamInfo{
+				Name: fmt.Sprintf("arg%d", paramIdx),
+				Type: typStr,
+			})
+			paramIdx++
+		} else {
+			for _, name := range field.Names {
+				params = append(params, models.ParamInfo{
+					Name: name.Name,
+					Type: typStr,
+				})
+				paramIdx++
+			}
+		}
+	}
+	return params
+}
+
+func extractReturns(funcDecl *ast.FuncDecl) []models.ReturnInfo {
+	if funcDecl.Type.Results == nil {
+		return nil
+	}
+
+	var returns []models.ReturnInfo
+	for _, field := range funcDecl.Type.Results.List {
+		typStr := exprToString(field.Type)
+		count := len(field.Names)
+		if count == 0 {
+			count = 1
+		}
+		for range count {
+			returns = append(returns, models.ReturnInfo{Type: typStr})
+		}
+	}
+	return returns
+}
+
 func isExported(name string) bool {
 	if name == "" {
 		return false
@@ -72,13 +111,11 @@ func isExported(name string) bool {
 	return unicode.IsUpper(rune(name[0]))
 }
 
-// buildSignature constructs the function signature string
 func buildSignature(funcDecl *ast.FuncDecl) string {
 	var sb strings.Builder
 
 	sb.WriteString("func ")
 
-	// Add receiver if present (for methods)
 	if funcDecl.Recv != nil && len(funcDecl.Recv.List) > 0 {
 		sb.WriteString("(")
 		sb.WriteString(getReceiverType(funcDecl.Recv.List[0].Type))
@@ -88,7 +125,6 @@ func buildSignature(funcDecl *ast.FuncDecl) string {
 	sb.WriteString(funcDecl.Name.Name)
 	sb.WriteString("(")
 
-	// Add parameters
 	if funcDecl.Type.Params != nil {
 		for i, field := range funcDecl.Type.Params.List {
 			if i > 0 {
@@ -109,7 +145,6 @@ func buildSignature(funcDecl *ast.FuncDecl) string {
 
 	sb.WriteString(")")
 
-	// Add return type(s)
 	if funcDecl.Type.Results != nil && len(funcDecl.Type.Results.List) > 0 {
 		sb.WriteString(" ")
 		if len(funcDecl.Type.Results.List) > 1 {
@@ -129,7 +164,6 @@ func buildSignature(funcDecl *ast.FuncDecl) string {
 	return sb.String()
 }
 
-// getReceiverType extracts the receiver type from a method
 func getReceiverType(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.StarExpr:
@@ -141,7 +175,6 @@ func getReceiverType(expr ast.Expr) string {
 	}
 }
 
-// exprToString converts an expression to a string representation
 func exprToString(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.Ident:
@@ -161,14 +194,19 @@ func exprToString(expr ast.Expr) string {
 		return "interface{}"
 	case *ast.Ellipsis:
 		return "..." + exprToString(t.Elt)
+	case *ast.FuncType:
+		return "func(...)"
+	case *ast.ChanType:
+		return "chan " + exprToString(t.Value)
+	case *ast.BasicLit:
+		return t.Value
 	default:
 		return "unknown"
 	}
 }
 
-// calculateComplexity calculates cyclomatic complexity
 func calculateComplexity(funcDecl *ast.FuncDecl) int {
-	complexity := 1 // Base complexity
+	complexity := 1
 
 	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
 		switch n.(type) {
@@ -185,12 +223,10 @@ func calculateComplexity(funcDecl *ast.FuncDecl) int {
 		case *ast.SelectStmt:
 			complexity++
 		case *ast.CaseClause:
-			// Don't count default case
 			if c, ok := n.(*ast.CaseClause); ok && c.List != nil {
 				complexity++
 			}
 		case *ast.BinaryExpr:
-			// Count && and || in conditions
 			if b, ok := n.(*ast.BinaryExpr); ok {
 				if b.Op == token.LAND || b.Op == token.LOR {
 					complexity++

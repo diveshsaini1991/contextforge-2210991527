@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/divesh/contextforge/internal/models"
 )
 
-// StubGenerator generates test stub files for missing tests.
+// StubGenerator generates test files for missing tests.
 type StubGenerator struct {
 	repoPath string
 }
@@ -20,8 +22,14 @@ func NewStubGenerator(repoPath string) *StubGenerator {
 	return &StubGenerator{repoPath: repoPath}
 }
 
-// GenerateStubs creates test files with stub functions for missing tests.
+// GenerateStubs creates test files with real test implementations for missing tests.
 func (sg *StubGenerator) GenerateStubs(ctx context.Context, repoContext *models.RepoContext, report *models.TestCoverageReport) ([]string, error) {
+	// Build function lookup from context
+	funcLookup := make(map[string]models.FunctionDetail)
+	for _, fn := range repoContext.AllFunctions {
+		funcLookup[fn.ID] = fn
+	}
+
 	byPackage := groupByPackage(report.MissingTests)
 	var createdFiles []string
 
@@ -44,21 +52,22 @@ func (sg *StubGenerator) GenerateStubs(ctx context.Context, repoContext *models.
 			existingContent = string(data)
 		}
 
-		stubs := generateTestStubs(scenarios, existingContent)
-		if stubs == "" {
+		testCode, extraImports := generateTests(scenarios, existingContent, funcLookup)
+		if testCode == "" {
 			continue
 		}
 
 		if fileExists {
-			if err := appendStubs(testFilePath, stubs, existingContent); err != nil {
-				return createdFiles, fmt.Errorf("failed to append stubs to %s: %w", testFilePath, err)
+			if err := appendStubs(testFilePath, testCode, existingContent); err != nil {
+				return createdFiles, fmt.Errorf("failed to append tests to %s: %w", testFilePath, err)
 			}
 		} else {
-			if err := createTestFile(testFilePath, pkgName, stubs); err != nil {
+			if err := createTestFile(testFilePath, pkgName, testCode, extraImports); err != nil {
 				return createdFiles, fmt.Errorf("failed to create test file %s: %w", testFilePath, err)
 			}
 		}
 
+		fixImports(testFilePath)
 		createdFiles = append(createdFiles, testFilePath)
 	}
 
@@ -89,40 +98,63 @@ func getTestFilePath(repoPath string, pkg *models.PackageDetail) string {
 	return filepath.Join(repoPath, pkg.Path, fmt.Sprintf("%s_test.go", pkg.Name))
 }
 
-func generateTestStubs(scenarios []models.TestScenario, existingContent string) string {
-	var stubs strings.Builder
+func generateTests(scenarios []models.TestScenario, existingContent string, funcLookup map[string]models.FunctionDetail) (string, []string) {
+	var sb strings.Builder
+	allImports := map[string]bool{}
 
 	for _, scenario := range scenarios {
 		if strings.Contains(existingContent, fmt.Sprintf("func %s(", scenario.TestName)) {
 			continue
 		}
 
-		stubs.WriteString(fmt.Sprintf("\n// %s\n", scenario.Description))
-		stubs.WriteString(fmt.Sprintf("func %s(t *testing.T) {\n", scenario.TestName))
-		stubs.WriteString(fmt.Sprintf("\tt.Skip(%q)\n", "stub: "+scenario.Description))
-		stubs.WriteString("}\n")
+		fn, found := funcLookup[scenario.FunctionID]
+		if found && len(fn.Params) > 0 || (found && len(fn.Returns) > 0) {
+			code, imports := GenerateTestCode(fn, scenario)
+			sb.WriteString(code)
+			for _, imp := range imports {
+				allImports[imp] = true
+			}
+		} else {
+			sb.WriteString(fmt.Sprintf("\nfunc %s(t *testing.T) {\n", scenario.TestName))
+			sb.WriteString(fmt.Sprintf("\tt.Skip(%q)\n", "stub: "+scenario.Description))
+			sb.WriteString("}\n")
+		}
 	}
 
-	return stubs.String()
+	var importList []string
+	for imp := range allImports {
+		importList = append(importList, imp)
+	}
+	sort.Strings(importList)
+
+	return sb.String(), importList
 }
 
-func createTestFile(filePath, pkgName string, stubs string) error {
+func createTestFile(filePath, pkgName string, testCode string, extraImports []string) error {
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return err
 	}
 
 	var content strings.Builder
-	content.WriteString(fmt.Sprintf("package %s\n\nimport \"testing\"\n", pkgName))
-	content.WriteString(stubs)
+	content.WriteString(fmt.Sprintf("package %s\n\nimport (\n\t\"testing\"\n", pkgName))
+	for _, imp := range extraImports {
+		content.WriteString(fmt.Sprintf("\t%q\n", imp))
+	}
+	content.WriteString(")\n")
+	content.WriteString(testCode)
 
 	return os.WriteFile(filePath, []byte(content.String()), 0644)
 }
 
-func appendStubs(filePath, stubs, existingContent string) error {
+func appendStubs(filePath, testCode, existingContent string) error {
 	newContent := existingContent
 	if !strings.HasSuffix(existingContent, "\n") {
 		newContent += "\n"
 	}
-	newContent += stubs
+	newContent += testCode
 	return os.WriteFile(filePath, []byte(newContent), 0644)
+}
+
+func fixImports(filePath string) {
+	_ = exec.Command("goimports", "-w", filePath).Run()
 }

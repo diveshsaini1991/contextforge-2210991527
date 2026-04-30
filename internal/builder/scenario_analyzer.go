@@ -42,7 +42,7 @@ func (sa *ScenarioAnalyzer) AnalyzeScenarios(ctx context.Context, repoContext *m
 			return nil, ctx.Err()
 		}
 
-		if strings.HasPrefix(function.Name, "Test") {
+		if strings.HasPrefix(function.Name, "Test") || strings.HasPrefix(function.Name, "Benchmark") {
 			continue
 		}
 
@@ -85,51 +85,57 @@ func (sa *ScenarioAnalyzer) LoadAnalysis(_ context.Context) (*models.ScenarioAna
 func generateScenariosForFunction(fn models.FunctionDetail, scenarioID *int) []models.TestScenario {
 	var scenarios []models.TestScenario
 
-	scenarios = append(scenarios, models.TestScenario{
-		ID:           fmt.Sprintf("S%03d", *scenarioID),
-		FunctionID:   fn.ID,
-		FunctionName: fn.Name,
-		Package:      fn.Package,
-		ScenarioType: "happy_path",
-		Description:  fmt.Sprintf("Test %s with valid inputs", fn.Name),
-		TestName:     fmt.Sprintf("Test%s", fn.Name),
-	})
-	*scenarioID++
+	// Happy path: always needed for exported functions, or unexported with complexity > 1
+	if fn.Exported || fn.ComplexityScore > 1 {
+		scenarios = append(scenarios, models.TestScenario{
+			ID:           fmt.Sprintf("S%03d", *scenarioID),
+			FunctionID:   fn.ID,
+			FunctionName: fn.Name,
+			Package:      fn.Package,
+			ScenarioType: "happy_path",
+			Description:  fmt.Sprintf("Test %s with valid inputs and verify correct output", fn.Name),
+			TestName:     fmt.Sprintf("Test%s", fn.Name),
+		})
+		*scenarioID++
+	}
 
-	if shouldHaveErrorCase(fn) {
+	// Error case: only if the function signature explicitly returns error
+	if returnsError(fn.Signature) {
 		scenarios = append(scenarios, models.TestScenario{
 			ID:           fmt.Sprintf("S%03d", *scenarioID),
 			FunctionID:   fn.ID,
 			FunctionName: fn.Name,
 			Package:      fn.Package,
 			ScenarioType: "error_case",
-			Description:  fmt.Sprintf("Test %s error handling", fn.Name),
+			Description:  fmt.Sprintf("Test %s with invalid inputs that trigger error returns", fn.Name),
 			TestName:     fmt.Sprintf("Test%s_Error", fn.Name),
 		})
 		*scenarioID++
 	}
 
-	if fn.Exported && fn.ComplexityScore > 5 {
+	// Edge case: only for exported functions that are genuinely complex
+	if fn.Exported && fn.ComplexityScore > 5 && fn.LineCount > 10 {
 		scenarios = append(scenarios, models.TestScenario{
 			ID:           fmt.Sprintf("S%03d", *scenarioID),
 			FunctionID:   fn.ID,
 			FunctionName: fn.Name,
 			Package:      fn.Package,
 			ScenarioType: "edge_case",
-			Description:  fmt.Sprintf("Test %s with edge cases (nil, empty, large values)", fn.Name),
+			Description:  fmt.Sprintf("Test %s with edge cases (nil, empty, zero, max values)", fn.Name),
 			TestName:     fmt.Sprintf("Test%s_EdgeCases", fn.Name),
 		})
 		*scenarioID++
 	}
 
-	if shouldHaveBoundaryCase(fn) {
+	// Boundary: only for exported functions with numeric/collection params AND non-trivial logic
+	if fn.Exported && fn.ComplexityScore > 2 && hasNumericOrCollectionParams(fn.Signature) {
 		scenarios = append(scenarios, models.TestScenario{
 			ID:           fmt.Sprintf("S%03d", *scenarioID),
 			FunctionID:   fn.ID,
 			FunctionName: fn.Name,
 			Package:      fn.Package,
 			ScenarioType: "boundary",
-			Description:  fmt.Sprintf("Test %s boundary conditions", fn.Name),
+			Description:  fmt.Sprintf("Test %s at boundary values (zero, negative, overflow, empty collections)", fn.Name),
 			TestName:     fmt.Sprintf("Test%s_Boundary", fn.Name),
 		})
 		*scenarioID++
@@ -138,20 +144,43 @@ func generateScenariosForFunction(fn models.FunctionDetail, scenarioID *int) []m
 	return scenarios
 }
 
-func shouldHaveErrorCase(fn models.FunctionDetail) bool {
-	if strings.Contains(fn.Signature, "error") {
-		return true
+// returnsError checks if the function signature has an error return type.
+func returnsError(signature string) bool {
+	// Look for "error" in the return portion (after the last ")")
+	idx := strings.LastIndex(signature, ")")
+	if idx == -1 {
+		return false
 	}
-	if fn.ReceiverType != "" && strings.Contains(fn.ReceiverType, "*") {
-		return true
-	}
-	return false
+	returnPart := signature[idx:]
+	return strings.Contains(returnPart, "error")
 }
 
-func shouldHaveBoundaryCase(fn models.FunctionDetail) bool {
-	sig := strings.ToLower(fn.Signature)
-	for _, keyword := range []string{"int", "int64", "int32", "float", "uint", "[]", "map["} {
-		if strings.Contains(sig, keyword) {
+func hasNumericOrCollectionParams(signature string) bool {
+	// Extract the parameters portion between first ( and matching )
+	start := strings.Index(signature, "(")
+	if start == -1 {
+		return false
+	}
+	// Find the closing paren for params (not return type)
+	depth := 0
+	end := -1
+	for i := start; i < len(signature); i++ {
+		if signature[i] == '(' {
+			depth++
+		} else if signature[i] == ')' {
+			depth--
+			if depth == 0 {
+				end = i
+				break
+			}
+		}
+	}
+	if end == -1 {
+		return false
+	}
+	params := strings.ToLower(signature[start:end])
+	for _, keyword := range []string{"int", "float", "uint", "byte", "[]", "map["} {
+		if strings.Contains(params, keyword) {
 			return true
 		}
 	}

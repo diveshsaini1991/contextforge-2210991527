@@ -28,19 +28,21 @@ type PackageDetail struct {
 
 // FunctionDetail represents a function with full context
 type FunctionDetail struct {
-	ID              string   `json:"id"` // package.FunctionName
-	Name            string   `json:"name"`
-	Package         string   `json:"package"`
-	Signature       string   `json:"signature"`
-	Exported        bool     `json:"exported"`
-	FilePath        string   `json:"file_path"`
-	StartLine       int      `json:"start_line"`
-	EndLine         int      `json:"end_line"`
-	LineCount       int      `json:"line_count"`
-	ComplexityScore int      `json:"complexity_score"`
-	ReceiverType    string   `json:"receiver_type,omitempty"`
-	HasTests        bool     `json:"has_tests"`
-	ExistingTests   []string `json:"existing_tests"` // Test function names
+	ID              string       `json:"id"` // package.FunctionName
+	Name            string       `json:"name"`
+	Package         string       `json:"package"`
+	Signature       string       `json:"signature"`
+	Exported        bool         `json:"exported"`
+	FilePath        string       `json:"file_path"`
+	StartLine       int          `json:"start_line"`
+	EndLine         int          `json:"end_line"`
+	LineCount       int          `json:"line_count"`
+	ComplexityScore int          `json:"complexity_score"`
+	ReceiverType    string       `json:"receiver_type,omitempty"`
+	Params          []ParamInfo  `json:"params,omitempty"`
+	Returns         []ReturnInfo `json:"returns,omitempty"`
+	HasTests        bool         `json:"has_tests"`
+	ExistingTests   []string     `json:"existing_tests"`
 }
 
 // TestScenario represents a test case that should exist
@@ -66,15 +68,20 @@ type ScenarioAnalysis struct {
 
 // TestCoverageReport shows what tests exist vs what's missing
 type TestCoverageReport struct {
-	Repository       string          `json:"repository"`
-	GeneratedAt      time.Time       `json:"generated_at"`
-	TotalScenarios   int             `json:"total_scenarios"`
-	CoveredScenarios int             `json:"covered_scenarios"`
-	MissingScenarios int             `json:"missing_scenarios"`
-	CoveragePercent  float64         `json:"coverage_percent"`
-	ByPackage        []PackageReport `json:"by_package"`
-	MissingTests     []TestScenario  `json:"missing_tests"`
-	Summary          string          `json:"summary"`
+	Repository         string          `json:"repository"`
+	GeneratedAt        time.Time       `json:"generated_at"`
+	TotalFunctions     int             `json:"total_functions"`
+	TestedFunctions    int             `json:"tested_functions"`
+	UntestedFunctions  int             `json:"untested_functions"`
+	FunctionCoverage   float64         `json:"function_coverage_percent"`
+	TotalScenarios     int             `json:"total_scenarios"`
+	CoveredScenarios   int             `json:"covered_scenarios"`
+	MissingScenarios   int             `json:"missing_scenarios"`
+	ScenarioCoverage   float64         `json:"scenario_coverage_percent"`
+	ByPackage          []PackageReport `json:"by_package"`
+	UntestedFuncList   []string        `json:"untested_functions_list"`
+	MissingTests       []TestScenario  `json:"missing_tests"`
+	Summary            string          `json:"summary"`
 }
 
 // PackageReport shows coverage for a single package

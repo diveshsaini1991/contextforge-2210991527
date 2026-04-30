@@ -74,6 +74,8 @@ func (cb *ContextBuilder) BuildContext(ctx context.Context) (*models.RepoContext
 				LineCount:       fn.LineCount,
 				ComplexityScore: fn.ComplexityScore,
 				ReceiverType:    fn.ReceiverType,
+				Params:          fn.Params,
+				Returns:         fn.Returns,
 				HasTests:        false,
 				ExistingTests:   []string{},
 			}
