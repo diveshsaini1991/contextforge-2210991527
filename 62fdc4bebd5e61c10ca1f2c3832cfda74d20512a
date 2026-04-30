@@ -1,0 +1,20 @@
+cmd/mcp-server/main.go
+  aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:12:09.489Z 4,6-8,10,15-16,18-19,21-27
+internal/builder/context_builder.go
+  aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:08:27.458Z 4,7-9,21,23-25,28,32,36-39,41-42,47,52-53,58-61,81,95-102,107,111,114-119,121-126,128,131,135-137,140,147,153,159-161,195-196,200,210-216,218-225,227-228,230-231,252-253,257-269
+internal/builder/coverage_checker.go
+  aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:09:16.271Z 4,15,21,29-31,34,38-40,46,51,82-86,96-101,103-108,110-112,120,127,135,170
+internal/builder/scenario_analyzer.go
+  aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:08:52.644Z 4,15,17-19,22,30-33,35-36,40-43,49-51,53,71-76,78-83,85,99,125,141,151,153-154,169
+internal/builder/stub_generator.go
+  aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:09:34.466Z 4,13,18,20,23-25,29-30,33,38,41,47-50,53-54,57-58,68-75,77-78,85,89,92,102,109-110,115,121
+internal/models/context.go
+  aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:12:55.351Z 16-18,23-26
+internal/models/function.go
+  aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:07:28.483Z 13
+mcp/server.go
+  aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:09:59.820Z 8,12,14-21,30-34,36-38,42-47,49-51,55-60,62-64,68-73,75,79-81,83,86-92,94-101,103-108,110-114,116-119
+mcp/tools.go
+  aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:10:39.787Z 7-8,11,15-19,22-23,26,29,31-32,34-35,38,40-43,46-48,50-51,53-54,56,58-59,61-66,69-72,74-75,77-81,84,86-87,89-90,92-96,99,101,104,106,109,112,114-116,119,121,124-125,127-131,133,137,139,142,145,147-149,152-153,155,158-159,161,164,166,169-174,176-180,183,185,188,191-195,198-200,203-204,206-210,213,215-216,218-219,221-223,225-228,231
+---
+{"schema_version": "authorship/3.0.0", "base_commit_sha": "HEAD~1", "prompts": {"aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:12:09.489Z": {"agent_id": {"tool": "claude_code", "model": ""}, "human_author": "divesh.saini@razorpay.com", "accepted_lines": 16, "overriden_lines": 0}, "aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:08:27.458Z": {"agent_id": {"tool": "claude_code", "model": ""}, "human_author": "divesh.saini@razorpay.com", "accepted_lines": 94, "overriden_lines": 0}, "aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:09:16.271Z": {"agent_id": {"tool": "claude_code", "model": ""}, "human_author": "divesh.saini@razorpay.com", "accepted_lines": 36, "overriden_lines": 0}, "aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:08:52.644Z": {"agent_id": {"tool": "claude_code", "model": ""}, "human_author": "divesh.saini@razorpay.com", "accepted_lines": 40, "overriden_lines": 0}, "aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:09:34.466Z": {"agent_id": {"tool": "claude_code", "model": ""}, "human_author": "divesh.saini@razorpay.com", "accepted_lines": 38, "overriden_lines": 0}, "aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:12:55.351Z": {"agent_id": {"tool": "claude_code", "model": ""}, "human_author": "divesh.saini@razorpay.com", "accepted_lines": 7, "overriden_lines": 0}, "aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:07:28.483Z": {"agent_id": {"tool": "claude_code", "model": ""}, "human_author": "divesh.saini@razorpay.com", "accepted_lines": 1, "overriden_lines": 0}, "aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:09:59.820Z": {"agent_id": {"tool": "claude_code", "model": ""}, "human_author": "divesh.saini@razorpay.com", "accepted_lines": 77, "overriden_lines": 0}, "aab8bba7-1637-40ff-b96c-b9baf2442e4b:2026-04-30T14:10:39.787Z": {"agent_id": {"tool": "claude_code", "model": ""}, "human_author": "divesh.saini@razorpay.com", "accepted_lines": 134, "overriden_lines": 0}}}
