@@ -13,19 +13,17 @@ type RepoContext struct {
 
 // ContextSummary provides high-level repo statistics
 type ContextSummary struct {
-	TotalPackages  int    `json:"total_packages"`
-	TotalFunctions int    `json:"total_functions"`
-	TotalTests     int    `json:"total_tests"`
-	Description    string `json:"description"`
+	TotalPackages  int `json:"total_packages"`
+	TotalFunctions int `json:"total_functions"`
+	TotalTests     int `json:"total_tests"`
 }
 
 // PackageDetail contains detailed package information
 type PackageDetail struct {
-	Name        string           `json:"name"`
-	Path        string           `json:"path"`
-	Description string           `json:"description"`
-	Functions   []FunctionDetail `json:"functions"`
-	TestFiles   []string         `json:"test_files"`
+	Name      string           `json:"name"`
+	Path      string           `json:"path"`
+	Functions []FunctionDetail `json:"functions"`
+	TestFiles []string         `json:"test_files"`
 }
 
 // FunctionDetail represents a function with full context

@@ -4,231 +4,233 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/divesh/contextforge/internal/builder"
+	"github.com/divesh/contextforge/internal/models"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// Tool handlers for MCP server
-
-// BuildRepoContextInput defines input for build_repo_context tool
-type BuildRepoContextInput struct {
-	RepoPath string `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
+// ToolInput is the shared input for all ContextForge tools.
+type ToolInput struct {
+	RepoPath      string `json:"repo_path"`
+	Force         bool   `json:"force"`
+	PackageFilter string `json:"package_filter"`
 }
 
-// AnalyzeTestScenariosInput defines input for analyze_test_scenarios tool
-type AnalyzeTestScenariosInput struct {
-	RepoPath string `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
+// parseAndValidate extracts ToolInput from the request and validates repo_path.
+func parseAndValidate(request mcp.CallToolRequest) (*ToolInput, *mcp.CallToolResult) {
+	args, ok := request.Params.Arguments.(map[string]interface{})
+	if !ok {
+		return nil, mcp.NewToolResultError("invalid arguments: expected JSON object")
+	}
+
+	var input ToolInput
+	if err := mapToStruct(args, &input); err != nil {
+		return nil, mcp.NewToolResultErrorf("invalid input: %v", err)
+	}
+
+	if input.RepoPath == "" {
+		return nil, mcp.NewToolResultError("repo_path is required")
+	}
+
+	info, err := os.Stat(input.RepoPath)
+	if err != nil {
+		return nil, mcp.NewToolResultErrorf("repo_path %q does not exist: %v", input.RepoPath, err)
+	}
+	if !info.IsDir() {
+		return nil, mcp.NewToolResultErrorf("repo_path %q is not a directory", input.RepoPath)
+	}
+
+	if _, err := os.Stat(filepath.Join(input.RepoPath, "go.mod")); err != nil {
+		return nil, mcp.NewToolResultErrorf("repo_path %q does not contain a go.mod file", input.RepoPath)
+	}
+
+	return &input, nil
 }
 
-// CheckTestCoverageInput defines input for check_test_coverage tool
-type CheckTestCoverageInput struct {
-	RepoPath string `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
+func resultJSON(v any) (*mcp.CallToolResult, error) {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return mcp.NewToolResultErrorf("failed to marshal result: %v", err), nil
+	}
+	return mcp.NewToolResultText(string(data)), nil
 }
 
-// GenerateTestStubsInput defines input for generate_test_stubs tool
-type GenerateTestStubsInput struct {
-	RepoPath string `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
+func newContextBuilder(input *ToolInput) *builder.ContextBuilder {
+	cb := builder.NewContextBuilder(input.RepoPath)
+	if input.PackageFilter != "" {
+		cb.SetPackageFilter(input.PackageFilter)
+	}
+	return cb
 }
 
-// GetContextInput defines input for get_context tool
-type GetContextInput struct {
-	RepoPath string `json:"repo_path" jsonschema:"required,description=Path to the Go repository"`
+func newScenarioAnalyzer(input *ToolInput) *builder.ScenarioAnalyzer {
+	sa := builder.NewScenarioAnalyzer(input.RepoPath)
+	if input.PackageFilter != "" {
+		sa.SetPackageFilter(input.PackageFilter)
+	}
+	return sa
 }
 
-// HandleBuildRepoContext handles the build_repo_context tool
+// HandleBuildRepoContext scans the repository and builds comprehensive context.
 func HandleBuildRepoContext(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, ok := request.Params.Arguments.(map[string]interface{})
-	if !ok {
-		return mcp.NewToolResultError("Invalid arguments type"), nil
+	input, errResult := parseAndValidate(request)
+	if errResult != nil {
+		return errResult, nil
 	}
 
-	var input BuildRepoContextInput
-	if err := mapToStruct(args, &input); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
-	}
-
-	// Build comprehensive repository context
-	contextBuilder := builder.NewContextBuilder(input.RepoPath)
-	repoContext, err := contextBuilder.BuildContext()
+	repoContext, err := newContextBuilder(input).BuildContext(ctx)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to build context: %v", err)), nil
+		return mcp.NewToolResultErrorf("failed to build context: %v", err), nil
 	}
 
-	// Convert to JSON
-	result, err := json.MarshalIndent(repoContext, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal result: %v", err)), nil
-	}
-
-	return mcp.NewToolResultText(string(result)), nil
+	return resultJSON(repoContext)
 }
 
-// HandleAnalyzeTestScenarios handles the analyze_test_scenarios tool
+// HandleAnalyzeTestScenarios generates test scenarios for all functions.
 func HandleAnalyzeTestScenarios(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, ok := request.Params.Arguments.(map[string]interface{})
-	if !ok {
-		return mcp.NewToolResultError("Invalid arguments type"), nil
+	input, errResult := parseAndValidate(request)
+	if errResult != nil {
+		return errResult, nil
 	}
 
-	var input AnalyzeTestScenariosInput
-	if err := mapToStruct(args, &input); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
-	}
-
-	// Try to load existing context
-	contextBuilder := builder.NewContextBuilder(input.RepoPath)
-	repoContext, err := contextBuilder.LoadContext()
+	repoContext, err := loadOrBuildContext(ctx, input)
 	if err != nil {
-		// Context doesn't exist, build it
-		repoContext, err = contextBuilder.BuildContext()
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to build context: %v", err)), nil
-		}
+		return mcp.NewToolResultErrorf("failed to get context: %v", err), nil
 	}
 
-	// Analyze test scenarios
-	scenarioAnalyzer := builder.NewScenarioAnalyzer(input.RepoPath)
-	scenarios, err := scenarioAnalyzer.AnalyzeScenarios(repoContext)
+	scenarios, err := newScenarioAnalyzer(input).AnalyzeScenarios(ctx, repoContext)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to analyze scenarios: %v", err)), nil
+		return mcp.NewToolResultErrorf("failed to analyze scenarios: %v", err), nil
 	}
 
-	// Convert to JSON
-	result, err := json.MarshalIndent(scenarios, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal result: %v", err)), nil
-	}
-
-	return mcp.NewToolResultText(string(result)), nil
+	return resultJSON(scenarios)
 }
 
-// HandleCheckTestCoverage handles the check_test_coverage tool
+// HandleCheckTestCoverage compares scenarios against existing tests.
 func HandleCheckTestCoverage(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, ok := request.Params.Arguments.(map[string]interface{})
-	if !ok {
-		return mcp.NewToolResultError("Invalid arguments type"), nil
+	input, errResult := parseAndValidate(request)
+	if errResult != nil {
+		return errResult, nil
 	}
 
-	var input CheckTestCoverageInput
-	if err := mapToStruct(args, &input); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
-	}
-
-	// Load or build context
-	contextBuilder := builder.NewContextBuilder(input.RepoPath)
-	repoContext, err := contextBuilder.LoadContext()
+	repoContext, err := loadOrBuildContext(ctx, input)
 	if err != nil {
-		repoContext, err = contextBuilder.BuildContext()
+		return mcp.NewToolResultErrorf("failed to get context: %v", err), nil
+	}
+
+	scenarioAnalyzer := newScenarioAnalyzer(input)
+	var scenarios *models.ScenarioAnalysis
+
+	if !input.Force {
+		scenarios, _ = scenarioAnalyzer.LoadAnalysis(ctx)
+	}
+	if scenarios == nil {
+		scenarios, err = scenarioAnalyzer.AnalyzeScenarios(ctx, repoContext)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to build context: %v", err)), nil
+			return mcp.NewToolResultErrorf("failed to analyze scenarios: %v", err), nil
 		}
 	}
 
-	// Load or analyze scenarios
-	scenarioAnalyzer := builder.NewScenarioAnalyzer(input.RepoPath)
-	scenarios, err := scenarioAnalyzer.LoadAnalysis()
+	report, err := builder.NewCoverageChecker(input.RepoPath).CheckCoverage(ctx, repoContext, scenarios)
 	if err != nil {
-		scenarios, err = scenarioAnalyzer.AnalyzeScenarios(repoContext)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to analyze scenarios: %v", err)), nil
-		}
+		return mcp.NewToolResultErrorf("failed to check coverage: %v", err), nil
 	}
 
-	// Check coverage
-	coverageChecker := builder.NewCoverageChecker(input.RepoPath)
-	report, err := coverageChecker.CheckCoverage(repoContext, scenarios)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to check coverage: %v", err)), nil
-	}
-
-	// Convert to JSON
-	result, err := json.MarshalIndent(report, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal result: %v", err)), nil
-	}
-
-	return mcp.NewToolResultText(string(result)), nil
+	return resultJSON(report)
 }
 
-// HandleGenerateTestStubs handles the generate_test_stubs tool
+// HandleGenerateTestStubs creates test stub files for missing tests.
 func HandleGenerateTestStubs(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, ok := request.Params.Arguments.(map[string]interface{})
-	if !ok {
-		return mcp.NewToolResultError("Invalid arguments type"), nil
+	input, errResult := parseAndValidate(request)
+	if errResult != nil {
+		return errResult, nil
 	}
 
-	var input GenerateTestStubsInput
-	if err := mapToStruct(args, &input); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
-	}
-
-	// Load context
-	contextBuilder := builder.NewContextBuilder(input.RepoPath)
-	repoContext, err := contextBuilder.LoadContext()
+	cb := builder.NewContextBuilder(input.RepoPath)
+	repoContext, err := cb.LoadContext(ctx)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Context not found. Run build_repo_context first: %v", err)), nil
+		return mcp.NewToolResultErrorf("context not found; run build_repo_context first: %v", err), nil
 	}
 
-	// Load coverage report
-	coverageChecker := builder.NewCoverageChecker(input.RepoPath)
-	report, err := coverageChecker.LoadReport()
+	checker := builder.NewCoverageChecker(input.RepoPath)
+	report, err := checker.LoadReport(ctx)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Coverage report not found. Run check_test_coverage first: %v", err)), nil
+		return mcp.NewToolResultErrorf("coverage report not found; run check_test_coverage first: %v", err), nil
 	}
 
-	// Generate stubs
-	stubGenerator := builder.NewStubGenerator(input.RepoPath)
-	createdFiles, err := stubGenerator.GenerateStubs(repoContext, report)
+	createdFiles, err := builder.NewStubGenerator(input.RepoPath).GenerateStubs(ctx, repoContext, report)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to generate stubs: %v", err)), nil
+		return mcp.NewToolResultErrorf("failed to generate stubs: %v", err), nil
 	}
 
-	// Return summary
-	summary := map[string]interface{}{
-		"created_files":     createdFiles,
-		"total_stubs":       len(report.MissingTests),
-		"message":           fmt.Sprintf("Generated %d test stubs in %d file(s)", len(report.MissingTests), len(createdFiles)),
-		"next_steps":        "Implement the test logic in the generated stub functions",
-	}
-
-	result, err := json.MarshalIndent(summary, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal result: %v", err)), nil
-	}
-
-	return mcp.NewToolResultText(string(result)), nil
+	return resultJSON(map[string]any{
+		"created_files": createdFiles,
+		"total_stubs":   len(report.MissingTests),
+		"message":       fmt.Sprintf("Generated %d test stubs across %d file(s)", len(report.MissingTests), len(createdFiles)),
+	})
 }
 
-// HandleGetContext handles the get_context tool
+// HandleGetContext retrieves saved repository context.
 func HandleGetContext(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, ok := request.Params.Arguments.(map[string]interface{})
-	if !ok {
-		return mcp.NewToolResultError("Invalid arguments type"), nil
+	input, errResult := parseAndValidate(request)
+	if errResult != nil {
+		return errResult, nil
 	}
 
-	var input GetContextInput
-	if err := mapToStruct(args, &input); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Invalid input: %v", err)), nil
-	}
-
-	// Load context
-	contextBuilder := builder.NewContextBuilder(input.RepoPath)
-	repoContext, err := contextBuilder.LoadContext()
+	repoContext, err := builder.NewContextBuilder(input.RepoPath).LoadContext(ctx)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Context not found. Run build_repo_context first: %v", err)), nil
+		return mcp.NewToolResultErrorf("context not found; run build_repo_context first: %v", err), nil
 	}
 
-	// Convert to JSON
-	result, err := json.MarshalIndent(repoContext, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal result: %v", err)), nil
-	}
-
-	return mcp.NewToolResultText(string(result)), nil
+	return resultJSON(repoContext)
 }
 
-// mapToStruct converts a map to a struct
+// HandleGetScenarios retrieves saved test scenario analysis.
+func HandleGetScenarios(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	input, errResult := parseAndValidate(request)
+	if errResult != nil {
+		return errResult, nil
+	}
+
+	analysis, err := builder.NewScenarioAnalyzer(input.RepoPath).LoadAnalysis(ctx)
+	if err != nil {
+		return mcp.NewToolResultErrorf("scenarios not found; run analyze_test_scenarios first: %v", err), nil
+	}
+
+	return resultJSON(analysis)
+}
+
+// HandleGetCoverageReport retrieves saved coverage report.
+func HandleGetCoverageReport(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	input, errResult := parseAndValidate(request)
+	if errResult != nil {
+		return errResult, nil
+	}
+
+	report, err := builder.NewCoverageChecker(input.RepoPath).LoadReport(ctx)
+	if err != nil {
+		return mcp.NewToolResultErrorf("coverage report not found; run check_test_coverage first: %v", err), nil
+	}
+
+	return resultJSON(report)
+}
+
+// loadOrBuildContext loads cached context or builds it fresh.
+func loadOrBuildContext(ctx context.Context, input *ToolInput) (*models.RepoContext, error) {
+	cb := newContextBuilder(input)
+
+	if !input.Force {
+		if repoContext, err := cb.LoadContext(ctx); err == nil {
+			return repoContext, nil
+		}
+	}
+
+	return cb.BuildContext(ctx)
+}
+
 func mapToStruct(m map[string]interface{}, result interface{}) error {
 	data, err := json.Marshal(m)
 	if err != nil {

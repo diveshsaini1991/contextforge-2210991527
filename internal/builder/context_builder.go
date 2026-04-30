@@ -1,8 +1,12 @@
 package builder
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"go/parser"
+	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,49 +18,49 @@ import (
 
 const contextDirName = ".contextforge"
 
-// ContextBuilder builds and persists repository context
+// ContextBuilder builds and persists repository context.
 type ContextBuilder struct {
-	repoPath   string
-	contextDir string
+	repoPath      string
+	contextDir    string
+	packageFilter string
 }
 
-// NewContextBuilder creates a new context builder
+// NewContextBuilder creates a new context builder for the given repository path.
 func NewContextBuilder(repoPath string) *ContextBuilder {
-	contextDir := filepath.Join(repoPath, contextDirName)
 	return &ContextBuilder{
 		repoPath:   repoPath,
-		contextDir: contextDir,
+		contextDir: filepath.Join(repoPath, contextDirName),
 	}
 }
 
-// BuildContext scans the repository and creates comprehensive context
-func (cb *ContextBuilder) BuildContext() (*models.RepoContext, error) {
-	// Ensure context directory exists
+// SetPackageFilter restricts scanning to packages whose path contains the given substring.
+func (cb *ContextBuilder) SetPackageFilter(filter string) {
+	cb.packageFilter = filter
+}
+
+// BuildContext scans the repository and creates comprehensive context.
+func (cb *ContextBuilder) BuildContext(ctx context.Context) (*models.RepoContext, error) {
 	if err := os.MkdirAll(cb.contextDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create context directory: %w", err)
 	}
 
-	// Scan all Go files (including tests this time)
-	packages, err := cb.scanAllFiles()
+	packages, err := cb.scanAllFiles(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan files: %w", err)
 	}
 
-	// Build function details with test information
-	allFunctions := []models.FunctionDetail{}
-	packageDetails := []models.PackageDetail{}
+	var allFunctions []models.FunctionDetail
+	var packageDetails []models.PackageDetail
 	totalTests := 0
 
 	for pkgPath, pkgInfo := range packages {
 		pkgDetail := models.PackageDetail{
-			Name:        pkgInfo.Name,
-			Path:        pkgPath,
-			Description: fmt.Sprintf("Package %s", pkgInfo.Name),
-			Functions:   []models.FunctionDetail{},
-			TestFiles:   pkgInfo.TestFiles,
+			Name:      pkgInfo.Name,
+			Path:      pkgPath,
+			Functions: []models.FunctionDetail{},
+			TestFiles: pkgInfo.TestFiles,
 		}
 
-		// Process each function
 		for _, fn := range pkgInfo.Functions {
 			funcDetail := models.FunctionDetail{
 				ID:              fmt.Sprintf("%s.%s", pkgInfo.Name, fn.Name),
@@ -74,8 +78,7 @@ func (cb *ContextBuilder) BuildContext() (*models.RepoContext, error) {
 				ExistingTests:   []string{},
 			}
 
-			// Check if tests exist for this function
-			existingTests := cb.findTestsForFunction(fn.Name, pkgInfo.TestFunctions)
+			existingTests := findTestsForFunction(fn.Name, pkgInfo.TestFunctions)
 			if len(existingTests) > 0 {
 				funcDetail.HasTests = true
 				funcDetail.ExistingTests = existingTests
@@ -89,63 +92,76 @@ func (cb *ContextBuilder) BuildContext() (*models.RepoContext, error) {
 		packageDetails = append(packageDetails, pkgDetail)
 	}
 
-	// Build summary
-	summary := models.ContextSummary{
-		TotalPackages:  len(packageDetails),
-		TotalFunctions: len(allFunctions),
-		TotalTests:     totalTests,
-		Description:    fmt.Sprintf("Repository with %d packages and %d functions", len(packageDetails), len(allFunctions)),
-	}
-
-	context := &models.RepoContext{
-		Repository:   cb.repoPath,
-		CreatedAt:    time.Now(),
-		Summary:      summary,
+	repoContext := &models.RepoContext{
+		Repository: cb.repoPath,
+		CreatedAt:  time.Now(),
+		Summary: models.ContextSummary{
+			TotalPackages:  len(packageDetails),
+			TotalFunctions: len(allFunctions),
+			TotalTests:     totalTests,
+		},
 		Packages:     packageDetails,
 		AllFunctions: allFunctions,
 	}
 
-	// Save to file
-	if err := cb.saveContext(context); err != nil {
+	if err := cb.saveContext(repoContext); err != nil {
 		return nil, fmt.Errorf("failed to save context: %w", err)
 	}
 
-	return context, nil
+	return repoContext, nil
 }
 
-// scanAllFiles scans both source and test files
-func (cb *ContextBuilder) scanAllFiles() (map[string]*packageInfo, error) {
+// LoadContext loads previously saved context from disk.
+func (cb *ContextBuilder) LoadContext(_ context.Context) (*models.RepoContext, error) {
+	data, err := os.ReadFile(filepath.Join(cb.contextDir, "context.json"))
+	if err != nil {
+		return nil, err
+	}
+
+	var repoContext models.RepoContext
+	if err := json.Unmarshal(data, &repoContext); err != nil {
+		return nil, err
+	}
+	return &repoContext, nil
+}
+
+func (cb *ContextBuilder) scanAllFiles(ctx context.Context) (map[string]*packageInfo, error) {
 	packages := make(map[string]*packageInfo)
 
-	err := filepath.Walk(cb.repoPath, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(cb.repoPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 
-		// Skip context directory
 		if strings.Contains(path, contextDirName) {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		// Skip vendor and hidden directories
 		if shouldSkipPath(path) {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		if info.IsDir() || !strings.HasSuffix(path, ".go") {
+		if d.IsDir() || !strings.HasSuffix(path, ".go") {
 			return nil
 		}
 
 		pkgPath := getPackagePath(cb.repoPath, path)
+
+		if cb.packageFilter != "" && !strings.Contains(pkgPath, cb.packageFilter) {
+			return nil
+		}
+
 		pkgName := getPackageName(path)
 
-		// Initialize package if not exists
 		if _, exists := packages[pkgPath]; !exists {
 			packages[pkgPath] = &packageInfo{
 				Name:          pkgName,
@@ -155,9 +171,7 @@ func (cb *ContextBuilder) scanAllFiles() (map[string]*packageInfo, error) {
 			}
 		}
 
-		// Parse the file
 		if strings.HasSuffix(path, "_test.go") {
-			// Test file - extract test function names
 			testFuncs, err := scanner.ParseFile(path)
 			if err == nil {
 				for _, fn := range testFuncs {
@@ -166,7 +180,6 @@ func (cb *ContextBuilder) scanAllFiles() (map[string]*packageInfo, error) {
 				packages[pkgPath].TestFiles = append(packages[pkgPath].TestFiles, path)
 			}
 		} else {
-			// Source file - extract functions
 			functions, err := scanner.ParseFile(path)
 			if err == nil {
 				packages[pkgPath].Functions = append(packages[pkgPath].Functions, functions...)
@@ -179,54 +192,14 @@ func (cb *ContextBuilder) scanAllFiles() (map[string]*packageInfo, error) {
 	return packages, err
 }
 
-// findTestsForFunction finds test functions that test a given function
-func (cb *ContextBuilder) findTestsForFunction(funcName string, testFunctions []string) []string {
-	var matches []string
-	searchPatterns := []string{
-		fmt.Sprintf("Test%s", funcName),
-		fmt.Sprintf("Test_%s", funcName),
-		fmt.Sprintf("TestNew%s", funcName),
-	}
-
-	for _, testFunc := range testFunctions {
-		for _, pattern := range searchPatterns {
-			if strings.Contains(testFunc, pattern) {
-				matches = append(matches, testFunc)
-				break
-			}
-		}
-	}
-
-	return matches
-}
-
-// saveContext saves the context to a JSON file
-func (cb *ContextBuilder) saveContext(context *models.RepoContext) error {
-	contextPath := filepath.Join(cb.contextDir, "context.json")
-	data, err := json.MarshalIndent(context, "", "  ")
+func (cb *ContextBuilder) saveContext(repoContext *models.RepoContext) error {
+	data, err := json.MarshalIndent(repoContext, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(contextPath, data, 0644)
+	return os.WriteFile(filepath.Join(cb.contextDir, "context.json"), data, 0644)
 }
 
-// LoadContext loads previously saved context
-func (cb *ContextBuilder) LoadContext() (*models.RepoContext, error) {
-	contextPath := filepath.Join(cb.contextDir, "context.json")
-	data, err := os.ReadFile(contextPath)
-	if err != nil {
-		return nil, err
-	}
-
-	var context models.RepoContext
-	if err := json.Unmarshal(data, &context); err != nil {
-		return nil, err
-	}
-
-	return &context, nil
-}
-
-// packageInfo holds temporary package data during scanning
 type packageInfo struct {
 	Name          string
 	Functions     []models.FunctionInfo
@@ -234,11 +207,28 @@ type packageInfo struct {
 	TestFiles     []string
 }
 
-// Helper functions
-func shouldSkipPath(path string) bool {
-	skipDirs := []string{
-		"vendor/", ".git/", "node_modules/", ".idea/", ".vscode/",
+// findTestsForFunction finds test functions that test a given function.
+func findTestsForFunction(funcName string, testFunctions []string) []string {
+	patterns := []string{
+		"Test" + funcName,
+		"Test_" + funcName,
+		"TestNew" + funcName,
 	}
+
+	var matches []string
+	for _, testFunc := range testFunctions {
+		for _, pattern := range patterns {
+			if strings.Contains(testFunc, pattern) {
+				matches = append(matches, testFunc)
+				break
+			}
+		}
+	}
+	return matches
+}
+
+func shouldSkipPath(path string) bool {
+	skipDirs := []string{"vendor/", ".git/", "node_modules/", ".idea/", ".vscode/"}
 	for _, skip := range skipDirs {
 		if strings.Contains(path, skip) {
 			return true
@@ -259,7 +249,24 @@ func getPackagePath(repoRoot, filePath string) string {
 	return relPath
 }
 
+// getPackageName reads the actual Go package declaration from the file's directory.
+// Falls back to the directory name if parsing fails.
 func getPackageName(filePath string) string {
 	dir := filepath.Dir(filePath)
+
+	entries, err := os.ReadDir(dir)
+	if err == nil {
+		fset := token.NewFileSet()
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+				continue
+			}
+			f, err := parser.ParseFile(fset, filepath.Join(dir, entry.Name()), nil, parser.PackageClauseOnly)
+			if err == nil && f.Name != nil {
+				return f.Name.Name
+			}
+		}
+	}
+
 	return filepath.Base(dir)
 }

@@ -1,20 +1,29 @@
 package main
 
 import (
+	"context"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/divesh/contextforge/mcp"
+	cfmcp "github.com/divesh/contextforge/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
 func main() {
-	// Create the MCP server
-	mcpServer := mcp.NewContextForgeServer()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	log.Println("Starting ContextForge MCP Server...")
+	mcpServer := cfmcp.NewContextForgeServer()
+	errLog := log.New(os.Stderr, "[contextforge] ", log.LstdFlags)
 
-	// Start the server with stdio transport
-	if err := server.ServeStdio(mcpServer); err != nil {
-		log.Fatalf("Server error: %v", err)
+	if err := server.ServeStdio(mcpServer,
+		server.WithErrorLogger(errLog),
+		server.WithStdioContextFunc(func(_ context.Context) context.Context {
+			return ctx
+		}),
+	); err != nil {
+		errLog.Fatalf("server error: %v", err)
 	}
 }
