@@ -30,6 +30,7 @@ tmp/
 # IDE/Editor files
 .vscode/
 .idea/
+.claude/
 *.iml
 .DS_Store
 

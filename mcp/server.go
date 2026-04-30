@@ -14,10 +14,11 @@ func NewContextForgeServer() *server.MCPServer {
 		server.WithRecovery(),
 		server.WithInstructions(
 			"ContextForge analyzes Go repositories for test coverage gaps. "+
+				"Provide either repo_path (local) or repo_url (GitHub/GitLab URL, cloned automatically). "+
 				"Recommended workflow: "+
 				"1) build_repo_context -> 2) analyze_test_scenarios -> 3) check_test_coverage -> 4) generate_test_stubs. "+
 				"Each step caches results in .contextforge/ for reuse. "+
-				"Use get_context, get_scenarios, or get_coverage_report to retrieve cached results without re-running analysis.",
+				"Use get_context, get_scenarios, or get_coverage_report to retrieve cached results.",
 		),
 	)
 
@@ -31,9 +32,11 @@ func registerTools(s *server.MCPServer) {
 			"Step 1 of 4. Scans a Go repository and builds comprehensive context: "+
 				"every function with signature, complexity, line count, and existing test mappings. "+
 				"Saves to .contextforge/context.json. Run this first before other tools. "+
+				"Provide repo_path (local) or repo_url (remote, auto-cloned). "+
 				"Returns JSON with summary stats, package list, and all function details.",
 		),
 		repoPathParam(),
+		repoURLParam(),
 		forceParam(),
 		packageFilterParam(),
 	), HandleBuildRepoContext)
@@ -47,6 +50,7 @@ func registerTools(s *server.MCPServer) {
 				"Returns JSON with all scenarios and suggested test function names.",
 		),
 		repoPathParam(),
+		repoURLParam(),
 		forceParam(),
 		packageFilterParam(),
 	), HandleAnalyzeTestScenarios)
@@ -60,6 +64,7 @@ func registerTools(s *server.MCPServer) {
 				"Returns JSON with coverage stats, package breakdown, and list of missing tests.",
 		),
 		repoPathParam(),
+		repoURLParam(),
 		forceParam(),
 		packageFilterParam(),
 	), HandleCheckTestCoverage)
@@ -73,6 +78,7 @@ func registerTools(s *server.MCPServer) {
 				"Returns summary with list of created/modified test files.",
 		),
 		repoPathParam(),
+		repoURLParam(),
 	), HandleGenerateTestStubs)
 
 	s.AddTool(mcp.NewTool("get_context",
@@ -81,6 +87,7 @@ func registerTools(s *server.MCPServer) {
 				"Returns error if build_repo_context has not been run yet.",
 		),
 		repoPathParam(),
+		repoURLParam(),
 	), HandleGetContext)
 
 	s.AddTool(mcp.NewTool("get_scenarios",
@@ -89,6 +96,7 @@ func registerTools(s *server.MCPServer) {
 				"Returns error if analyze_test_scenarios has not been run yet.",
 		),
 		repoPathParam(),
+		repoURLParam(),
 	), HandleGetScenarios)
 
 	s.AddTool(mcp.NewTool("get_coverage_report",
@@ -97,19 +105,25 @@ func registerTools(s *server.MCPServer) {
 				"Returns error if check_test_coverage has not been run yet.",
 		),
 		repoPathParam(),
+		repoURLParam(),
 	), HandleGetCoverageReport)
 }
 
 func repoPathParam() mcp.ToolOption {
 	return mcp.WithString("repo_path",
-		mcp.Required(),
-		mcp.Description("Absolute path to the Go repository to analyze"),
+		mcp.Description("Absolute path to a local Go repository. Provide this OR repo_url."),
+	)
+}
+
+func repoURLParam() mcp.ToolOption {
+	return mcp.WithString("repo_url",
+		mcp.Description("Git clone URL (e.g. https://github.com/user/repo). Auto-cloned and cached. Provide this OR repo_path."),
 	)
 }
 
 func forceParam() mcp.ToolOption {
 	return mcp.WithBoolean("force",
-		mcp.Description("Skip cached results and force a fresh scan/analysis. Default: false"),
+		mcp.Description("Skip cached results and force a fresh scan/analysis. Also re-clones if using repo_url. Default: false"),
 	)
 }
 

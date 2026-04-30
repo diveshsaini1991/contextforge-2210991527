@@ -1,185 +1,159 @@
-# ContextForge - Unit Test Coverage Intelligence System
+# ContextForge
 
-ContextForge is an intelligent system that analyzes Go repositories to identify test coverage gaps and generate targeted unit tests using AI.
+Go test coverage intelligence for your MCP-powered editor. ContextForge scans Go repositories, identifies test coverage gaps, and generates test stubs — all from within Cursor or Claude Desktop.
 
-## Features
+## What It Does
 
-- **Function-Level Analysis**: Scans Go repositories and extracts detailed metadata about every function
-- **Coverage Gap Detection**: Identifies uncovered, partially covered, and fully covered functions
-- **Smart Prioritization**: Ranks uncovered functions based on:
-  - Public API visibility (exported functions)
-  - Cyclomatic complexity
-  - Function size
-  - Package importance
-- **AI-Assisted Test Generation**: Extracts comprehensive context and leverages the AI assistant (Claude/Cursor) to generate real, working unit tests with:
-  - Comprehensive test cases (happy path, edge cases, error cases)
-  - Table-driven tests for complex functions
-  - Proper mocking for dependencies (HTTP handlers, databases, etc.)
-  - Meaningful assertions and error checking
-  - **No API key required** - uses your existing Cursor/Claude subscription
-- **MCP Integration**: Integrates seamlessly with Claude Desktop and Cursor via Model Context Protocol
-
-## Architecture
-
-ContextForge operates in three phases:
-
-1. **Repository Context Generation**: Scans the codebase and builds a function-level map
-2. **Coverage Analysis**: Runs `go test -cover` and identifies gaps
-3. **Smart Test Generation**: Prioritizes and generates tests for uncovered functions
+1. **Scans** your Go codebase — extracts every function, method, signature, and complexity score
+2. **Generates scenarios** — determines which tests should exist (happy path, error cases, edge cases, boundary conditions)
+3. **Finds gaps** — compares scenarios against your existing tests and reports what's missing
+4. **Creates stubs** — generates test files with skipped stub functions ready for implementation
 
 ## Installation
 
+Requires Go 1.23+.
+
 ```bash
-cd contextforge
-go mod download
-go build -o contextforge ./cmd/mcp-server
+go install github.com/divesh/contextforge/cmd/mcp-server@latest
 ```
+
+This installs the `mcp-server` binary to your `$GOPATH/bin`.
+
+### Cursor
+
+Add to `.cursor/mcp.json` in your project (or globally at `~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "contextforge": {
+      "command": "mcp-server"
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "contextforge": {
+      "command": "mcp-server"
+    }
+  }
+}
+```
+
+### Claude Code
+
+```bash
+claude mcp add contextforge mcp-server
+```
+
+### From Source
+
+```bash
+git clone https://github.com/divesh/contextforge.git
+cd contextforge
+go build -o mcp-server ./cmd/mcp-server
+```
+
+Then point your MCP config to the built binary path.
 
 ## Usage
 
-### As MCP Server
+Once connected, you get 7 tools available in your editor. Use them in order:
 
-Add to your MCP settings:
+### Step 1: Build Context
 
-**For Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "contextforge": {
-      "command": "/path/to/contextforge/contextforge"
-    }
-  }
-}
+```
+Use build_repo_context with repo_path="/path/to/your/go/project"
 ```
 
-**For Cursor** (`.cursorrules` or MCP settings):
-```json
-{
-  "mcpServers": {
-    "contextforge": {
-      "command": "/path/to/contextforge/contextforge"
-    }
-  }
-}
+Scans everything and saves to `.contextforge/context.json`.
+
+### Step 2: Analyze Scenarios
+
+```
+Use analyze_test_scenarios with repo_path="/path/to/your/go/project"
 ```
 
-### Available MCP Tools
-
-1. **build_repo_context**
-   - Scans repository and creates comprehensive context
-   - Saves to `.contextforge/context.json`
-   - Input: `{"repo_path": "/path/to/repo"}`
-
-2. **analyze_test_scenarios**
-   - Generates all test scenarios that should exist
-   - Saves to `.contextforge/scenarios.json`
-   - Input: `{"repo_path": "/path/to/repo"}`
-
-3. **check_test_coverage**
-   - Compares scenarios vs existing tests
-   - Saves to `.contextforge/coverage_report.json`
-   - Input: `{"repo_path": "/path/to/repo"}`
-
-4. **generate_test_stubs**
-   - Creates test files with stub functions for missing tests
-   - Each stub prints "test not yet built"
-   - Input: `{"repo_path": "/path/to/repo"}`
-
-5. **get_context**
-   - Retrieves saved repository context
-   - Input: `{"repo_path": "/path/to/repo"}`
-
-See [MCP_USAGE.md](MCP_USAGE.md) for detailed workflow guide.
-
-## How It Works
-
-ContextForge uses an efficient 4-step workflow:
-
-### Step 1: Build Repository Context
-Scans your codebase once and creates comprehensive documentation:
-- All functions with signatures and complexity
-- Existing tests mapped to functions
-- Saved to `.contextforge/context.json`
-
-### Step 2: Analyze Test Scenarios
-Generates test scenarios based on function characteristics:
-- Happy path (always)
-- Error cases (for functions returning errors)
-- Edge cases (for complex functions)
-- Boundary tests (for numeric/slice parameters)
+Generates all test scenarios that should exist. Saves to `.contextforge/scenarios.json`.
 
 ### Step 3: Check Coverage
-Compares scenarios against existing tests:
-- Smart matching of test names
-- Identifies coverage gaps
-- Generates detailed report
-
-### Step 4: Generate Test Stubs
-Creates test files with stub functions:
-- Each stub has `t.Skip("Test stub - implementation pending")`
-- Appends to existing files or creates new ones
-- Ready for implementation
-
-**Advantage:** Efficient caching - context is built once and reused!
-
-## Example Workflow
 
 ```
-1. build_repo_context → Create .contextforge/context.json
-2. analyze_test_scenarios → Generate .contextforge/scenarios.json
-3. check_test_coverage → Generate .contextforge/coverage_report.json
-4. generate_test_stubs → Create test files with stubs
+Use check_test_coverage with repo_path="/path/to/your/go/project"
 ```
 
-## Prioritization Algorithm
+Compares scenarios against existing tests. Shows what's covered and what's missing.
 
-Functions are scored based on:
-- **Exported (public API)**: +50 points
-- **Complexity**: complexity × 10 points
-- **Line count**: min(lines, 50) points
-- **Package importance**:
-  - main/pkg/api: +20 points
-  - internal: +10 points
-  - other: +5 points
+### Step 4: Generate Stubs
 
-Higher scores = higher priority for test generation.
+```
+Use generate_test_stubs with repo_path="/path/to/your/go/project"
+```
 
-## Requirements
+Creates test files with stub functions for every missing test. Each stub calls `t.Skip()` so your test suite still passes.
 
-- Go 1.21 or higher
-- Working Go module in the target repository
-- Existing test infrastructure (go test must work)
+### Analyze a Remote Repo
+
+You can also pass a `repo_url` instead of `repo_path` to analyze any public Git repository:
+
+```
+Use build_repo_context with repo_url="https://github.com/someone/their-repo"
+```
+
+The repo is cloned to a temp directory and cached for subsequent tool calls.
+
+### Retrieve Cached Results
+
+- `get_context` — retrieve saved context without re-scanning
+- `get_scenarios` — retrieve saved scenarios without re-analyzing
+- `get_coverage_report` — retrieve saved coverage report
+
+## Tool Parameters
+
+| Parameter | Available On | Description |
+|-----------|-------------|-------------|
+| `repo_path` | All tools | Absolute path to a local Go repository |
+| `repo_url` | All tools | Git URL to clone and analyze (alternative to repo_path) |
+| `force` | Steps 1-3 | Skip cache and force fresh analysis |
+| `package_filter` | Steps 1-3 | Only process packages matching this substring |
+
+## How Scenario Generation Works
+
+ContextForge generates test scenarios based on function characteristics:
+
+| Scenario Type | When Generated |
+|---------------|----------------|
+| **Happy path** | Every function |
+| **Error case** | Functions returning `error` or with pointer receivers |
+| **Edge case** | Exported functions with cyclomatic complexity > 5 |
+| **Boundary** | Functions with numeric, slice, or map parameters |
 
 ## Project Structure
 
 ```
 contextforge/
-├── cmd/mcp-server/       # MCP server entry point
+├── cmd/mcp-server/       # Entry point (stdio MCP server)
+├── mcp/                  # MCP tool registrations and handlers
 ├── internal/
-│   ├── scanner/          # Repository scanning & AST parsing
-│   ├── coverage/         # Coverage analysis & profile parsing
-│   ├── generator/        # Test generation & prioritization
+│   ├── builder/          # Context building, scenario analysis, coverage checking, stub generation
+│   ├── scanner/          # Go AST parsing and function extraction
 │   └── models/           # Data structures
-├── mcp/                  # MCP server implementation
-└── README.md
+└── testdata/             # Sample project for testing
 ```
 
-## Limitations (MVP)
+## Requirements
 
-- Go language only
-- Unit tests only (no integration tests)
-- Single repository support
-- Basic test templates (requires manual refinement)
-
-## Future Enhancements
-
-- Multi-language support (Python, TypeScript)
-- Integration test generation
-- LLM-powered intelligent test generation
-- Coverage trend tracking
-- CLI interface for CI/CD
+- Go 1.23+
+- Target repository must have a `go.mod` file
+- Git (only needed if using `repo_url` for remote repos)
 
 ## License
 
 MIT
-
