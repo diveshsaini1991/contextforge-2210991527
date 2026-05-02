@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	cfmcp "github.com/divesh/contextforge/mcp"
+	cfmcp "github.com/diveshsaini1991/contextforge-2210991527/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
