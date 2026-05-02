@@ -14,8 +14,8 @@
 # Go workspace file
 go.work
 
-# Compiled binary
-contextforge
+# Compiled binary (root only, not cmd/contextforge/)
+/contextforge
 
 # Dependency directories
 vendor/
