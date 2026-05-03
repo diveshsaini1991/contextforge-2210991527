@@ -212,7 +212,6 @@ contextforge-2210991527/
 │   ├── builder/          # Context building, scenario analysis, coverage checking, test generation
 │   ├── scanner/          # Go AST parsing and function extraction
 │   └── models/           # Data structures
-└── testdata/             # Sample project for testing
 ```
 
 ## Requirements
