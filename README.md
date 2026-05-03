@@ -17,33 +17,64 @@ Requires Go 1.23+.
 go install github.com/diveshsaini1991/contextforge-2210991527/cmd/contextforge@latest
 ```
 
-This installs the `contextforge` binary to your `$GOPATH/bin`.
+This installs the `contextforge` binary to your `$GOPATH/bin` directory.
+
+Find your binary path:
+```bash
+# macOS / Linux
+ls ~/go/bin/contextforge
+
+# Windows
+dir %USERPROFILE%\go\bin\contextforge.exe
+```
 
 ### Cursor
 
 Add to `.cursor/mcp.json` in your project (or globally at `~/.cursor/mcp.json`):
 
+**macOS / Linux:**
 ```json
 {
   "mcpServers": {
     "contextforge": {
-      "command": "contextforge"
+      "command": "/Users/<your-username>/go/bin/contextforge"
     }
   }
 }
 ```
 
-> If `contextforge` is not in your PATH, use the full path: `"command": "/path/to/go/bin/contextforge"`
+**Windows:**
+```json
+{
+  "mcpServers": {
+    "contextforge": {
+      "command": "C:\\Users\\<your-username>\\go\\bin\\contextforge.exe"
+    }
+  }
+}
+```
 
 ### Claude Desktop
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
+**macOS:**
 ```json
 {
   "mcpServers": {
     "contextforge": {
-      "command": "contextforge"
+      "command": "/Users/<your-username>/go/bin/contextforge"
+    }
+  }
+}
+```
+
+**Windows:**
+```json
+{
+  "mcpServers": {
+    "contextforge": {
+      "command": "C:\\Users\\<your-username>\\go\\bin\\contextforge.exe"
     }
   }
 }
@@ -52,7 +83,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 ### Claude Code
 
 ```bash
-claude mcp add contextforge contextforge
+claude mcp add contextforge ~/go/bin/contextforge
 ```
 
 ### From Source
