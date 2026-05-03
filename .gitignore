@@ -40,3 +40,6 @@ test-repo/
 # Environment files
 .env
 .env.local
+
+# Test Data
+/testdata
