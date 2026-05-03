@@ -191,6 +191,3 @@ contextforge-2210991527/
 - Git (only needed if using `repo_url` for remote repos)
 - `goimports` (optional, for auto-fixing imports in generated tests)
 
-## License
-
-MIT
