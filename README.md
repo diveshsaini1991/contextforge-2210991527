@@ -208,10 +208,10 @@ ContextForge reads function signatures via Go AST and generates real tests:
 contextforge-2210991527/
 ├── cmd/contextforge/     # Entry point (stdio MCP server)
 ├── mcp/                  # MCP tool registrations and handlers
-├── internal/
-│   ├── builder/          # Context building, scenario analysis, coverage checking, test generation
-│   ├── scanner/          # Go AST parsing and function extraction
-│   └── models/           # Data structures
+└── internal/
+    ├── builder/          # Context building, scenario analysis, coverage checking, test generation
+    ├── scanner/          # Go AST parsing and function extraction
+    └── models/           # Data structures
 ```
 
 ## Requirements
